@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Tools to create LMDB database and subsequently access it for efficient memory IO.
-Based on code from Jonas Teeuwen:
+Based on code from Jonas Teuwen:
 https://github.com/deepmedic/manet/blob/master/examples/create_lmdb_set.py
 https://github.com/deepmedic/manet/blob/master/manet/lmdb/dataset.py
 
@@ -16,9 +16,17 @@ except ImportError:
 import numpy as np
 from .utils import read_list, write_list
 
-def write_kv_to_lmdb(db, key, value):
+
+def write_kv_to_lmdb(db, key, value, verbose=0):
     """
     Write (key, value) to db.
+
+    Parameters
+    ----------
+    db : LMDB database
+    verbose : int
+      if > 0 will output verbose statements
+
     """
     success = False
     while not success:
@@ -32,7 +40,8 @@ def write_kv_to_lmdb(db, key, value):
             # double the map_size
             curr_limit = db.info()['map_size']
             new_limit = curr_limit * 2
-            tqdm.write('MapFullError: Doubling LMDB map size to {}MB.'.format(new_limit))
+            if verbose > 0:
+                tqdm.write('MapFullError: Doubling LMDB map size to {}MB.'.format(new_limit))
             db.set_mapsize(new_limit)
 
 
@@ -44,7 +53,7 @@ def write_data_to_lmdb(db, key, image, metadata):
     write_kv_to_lmdb(db, meta_key, ser_meta)
 
 
-def build_db(path, db_name, cases, load_fn):
+def build_db(path, db_name, cases, load_fn, verbose=0):
     """Build LMDB with images from load_fn
 
     Parameters
@@ -59,22 +68,29 @@ def build_db(path, db_name, cases, load_fn):
         The function should return a list or iterable of ndarrays.
 
     """
-    db = lmdb.open(os.path.join(path, db_name), map_async=True, max_dbs=0, writemap=True)
+    db = lmdb.open(os.path.join(path, db_name),
+                   map_async=True, max_dbs=0, writemap=True)
 
-    for case in tqdm(cases):
+    if verbose > 0:
+        wrapper = tqdm
+    else:
+        def wrapper(x):
+            return x
+
+    for case in wrapper(cases):
         ndarrays = load_fn(case)
         listlen = len(ndarrays)
-        key = "{}_len".format(case)
+        key = '{}_len'.format(case)
         write_kv_to_lmdb(db, key, json.dumps(listlen))
         for i, data in enumerate(ndarrays):
             metadata = dict(shape=data.shape, dtype=str(data.dtype))
-            key = "{}_{}".format(case, i)
+            key = '{}_{}'.format(case, i)
             write_data_to_lmdb(db, key, data, metadata)
 
     db.close()
 
     # write case keys to database key file
-    lmdb_keys_path = os.path.join(path, db_name + '_keys.json')
+    lmdb_keys_path = os.path.join(path, db_name + '_keys.lst')
     write_list(cases, lmdb_keys_path)
 
 
@@ -93,7 +109,7 @@ class LmdbDb(object):
             Name of the database.
         """
         lmdb_path = os.path.join(path, db_name)
-        lmdb_keys_path = os.path.join(path, db_name + '_keys.json')
+        lmdb_keys_path = os.path.join(path, db_name + '_keys.lst')
         self.lmdb_path = lmdb_path
         self.env = lmdb.open(lmdb_path, max_readers=None, readonly=True, lock=False,
                              readahead=False, meminit=False)
@@ -141,7 +157,7 @@ class LmdbDb(object):
         shape = metadata['shape']
         data = np.ndarray(shape, dtype, buffer=buf)
 
-        return data #dict(data=data, metadata=metadata)
+        return data
 
     def __len__(self):
         return self.length
@@ -149,6 +165,9 @@ class LmdbDb(object):
     def __repr__(self):
         return self.__class__.__name__ + ' (' + self.lmdb_path + ')'
 
-    def close(self):
+    def __enter__(self):
+        return self
+
+    def __exit__(self):
         self.env.close()
         self.keys = None
