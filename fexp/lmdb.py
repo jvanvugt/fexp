@@ -46,8 +46,10 @@ def write_kv_to_lmdb(db, key, value, verbose=0):
             db.set_mapsize(new_limit)
 
 
-def write_data_to_lmdb(db, key, image, metadata):
+def write_data_to_lmdb(db, key, image, metadata, verbose=0):
     """Write image data to db."""
+    if verbose > 1:
+        tqdm.write('Writing data and metadata for key {}.'.format(key))
     write_kv_to_lmdb(db, key, np.ascontiguousarray(image).tobytes())
     meta_key = key + '_metadata'
     ser_meta = json.dumps(metadata)
@@ -73,7 +75,8 @@ def build_db(path, db_name, cases, load_fn, verbose=0):
                    map_async=True, max_dbs=0, writemap=True)
 
     if verbose > 0:
-        wrapper = lambda x: tqdm(x, total=len(cases))
+        def wrapper(x):
+            return tqdm(x, total=len(cases))
     else:
         def wrapper(x):
             return x
@@ -83,7 +86,6 @@ def build_db(path, db_name, cases, load_fn, verbose=0):
         cases = [y for x, y in cases]
     else:
         keys = cases.copy()
-
     for idx, case in wrapper(enumerate(cases)):
         ndarrays = load_fn(case)
         listlen = len(ndarrays)
@@ -92,7 +94,7 @@ def build_db(path, db_name, cases, load_fn, verbose=0):
         for i, data in enumerate(ndarrays):
             metadata = dict(shape=data.shape, dtype=str(data.dtype))
             key = '{}_{}'.format(keys[idx], i)
-            write_data_to_lmdb(db, key, data, metadata)
+            write_data_to_lmdb(db, key, data, metadata, verbose)
 
     db.close()
 
