@@ -19,7 +19,7 @@ def write_json(data, fname):
 def read_list(filename):
     """Reads file with caseids, separated by line.
     """
-    f = open(filename, 'r')
+    f = open(filename, 'rb')
     ids = []
     for line in f:
         ids.append(line.strip())
