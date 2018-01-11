@@ -99,7 +99,7 @@ def build_db(path, db_name, cases, load_fn, verbose=0):
     db.close()
 
     # write case keys to database key file
-    lmdb_keys_path = os.path.join(path, db_name + '_keys.lst')
+    lmdb_keys_path = os.path.join(path, db_name + b'_keys.lst')
     write_list(keys, lmdb_keys_path)
 
 
@@ -118,12 +118,10 @@ class LmdbDb(object):
             Name of the database.
         """
         lmdb_path = os.path.join(path, db_name)
-        lmdb_keys_path = os.path.join(path, db_name + '_keys.lst')
+        lmdb_keys_path = os.path.join(path, db_name + b'_keys.lst')
         self.lmdb_path = lmdb_path
         self.env = lmdb.open(lmdb_path, max_readers=None, readonly=True, lock=False,
                              readahead=False, meminit=False)
-        with self.env.begin(write=False) as txn:
-            self.length = txn.stat()['entries']
 
         if os.path.isfile(lmdb_keys_path):
             self._keys = read_list(lmdb_keys_path)
@@ -133,6 +131,12 @@ class LmdbDb(object):
                 keys = [key[:-len('_len')] for key, _ in txn.cursor() if '_len' in key]
                 write_list(keys, lmdb_keys_path)
                 self._keys = keys
+
+        with self.env.begin(write=False) as txn:
+            length = txn.stat()['entries']
+            # Each item has data and metadata plus one length key
+            itemlen = 2*int(json.loads(str(txn.get(self._keys[0] + '_len')))) + 1
+            self.length = length / itemlen
 
     def __delitem__(self, key):
         idx = self._keys.index[key]
