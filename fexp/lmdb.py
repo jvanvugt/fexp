@@ -5,6 +5,7 @@ https://github.com/deepmedic/manet/blob/master/examples/create_lmdb_set.py
 https://github.com/deepmedic/manet/blob/master/manet/lmdb/dataset.py
 
 """
+from __future__ import absolute_import
 import lmdb
 import os
 import copy
@@ -62,7 +63,7 @@ def build_db(path, db_name, cases, load_fn, verbose=0):
         Path to folder with LMDB db.
     db_name : str
         Name of the database.
-    cases : list of str
+    cases : list of str, str
         Name of all cases to write to database (these become the database keys)
     load_fn : function which fetches the data associated with each element in cases.
         The function should return a list or iterable of ndarrays.
@@ -72,26 +73,32 @@ def build_db(path, db_name, cases, load_fn, verbose=0):
                    map_async=True, max_dbs=0, writemap=True)
 
     if verbose > 0:
-        wrapper = tqdm
+        wrapper = lambda x: tqdm(x, total=len(cases))
     else:
         def wrapper(x):
             return x
 
-    for case in wrapper(cases):
+    if len(cases[0]) == 2:
+        keys = [x for x, y in cases]
+        cases = [y for x, y in cases]
+    else:
+        keys = cases.copy()
+
+    for idx, case in wrapper(enumerate(cases)):
         ndarrays = load_fn(case)
         listlen = len(ndarrays)
-        key = '{}_len'.format(case)
+        key = '{}_len'.format(keys[idx])
         write_kv_to_lmdb(db, key, json.dumps(listlen))
         for i, data in enumerate(ndarrays):
             metadata = dict(shape=data.shape, dtype=str(data.dtype))
-            key = '{}_{}'.format(case, i)
+            key = '{}_{}'.format(keys[idx], i)
             write_data_to_lmdb(db, key, data, metadata)
 
     db.close()
 
     # write case keys to database key file
     lmdb_keys_path = os.path.join(path, db_name + '_keys.lst')
-    write_list(cases, lmdb_keys_path)
+    write_list(keys, lmdb_keys_path)
 
 
 class LmdbDb(object):
